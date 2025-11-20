@@ -6,6 +6,7 @@ import {
 import * as _ from "lodash";
 import {firestoreInstance} from "../index";
 
+const MAX_FIREBASE_BATCH = 499;
 
 export async function updateFeedAfterUserAction(event, follow: boolean) {
     // noinspection TypeScriptUnresolvedVariable
@@ -24,7 +25,7 @@ export async function updateFeedAfterUserAction(event, follow: boolean) {
         }
 
         //Generate the right amount of batches
-        const batches = _.chunk(followedUserPosts, MAX_BATCH_SIZE)
+        const batches = _.chunk(followedUserPosts, MAX_FIREBASE_BATCH)
             .map(postSnapshots => {
                 const writeBatch = firestoreInstance.batch();
                 if (follow) {
@@ -65,7 +66,7 @@ export async function updateFollowersFeed(event, isDeletion: boolean) {
         }
 
         //Generate the right amount of batches
-        const batches = _.chunk(authorFollowers, MAX_BATCH_SIZE)
+        const batches = _.chunk(authorFollowers, MAX_FIREBASE_BATCH)
             .map(userIds => {
                 const writeBatch = firestoreInstance.batch();
                 if (isDeletion) {
@@ -102,6 +103,10 @@ async function updateAuthorInUserReferences(userId: string, newUsername: string,
     };
 
     try {
+        // NOTE by Ertugrul: This extensive batching strategy is implemented to ensure high data consistency 
+        // across all denormalized documents (posts, comments, likes) with minimal latency, 
+        // adhering strictly to Firebase batch limits (499).
+        
         //Retrieve the user current followers to update all the references of their feeds
         const userFollowers = await getUserFollowersIds(userId);
         //for each follower, retrieve their posts in the feed which author is our user
@@ -135,7 +140,7 @@ async function updateAuthorInUserReferences(userId: string, newUsername: string,
             userEvents.map(event => eventReference.doc(event.id)));
 
         //Generate the right amount of batches
-        const batches = _.chunk(updateReferences, MAX_BATCH_SIZE)
+        const batches = _.chunk(updateReferences, MAX_FIREBASE_BATCH)
             .map(dataRefs => {
                 const writeBatch = firestoreInstance.batch();
                 dataRefs.forEach(ref => {
@@ -186,7 +191,7 @@ async function getUserFollowersIds(userId: string): Promise<string[]> {
 
 async function getLastMonthUserPosts(userId: string): Promise<FirebaseFirestore.DocumentSnapshot[]> {
     const today = new Date();
-    const priorDateTimeStamp = new Date().setDate(today.getDate() - 30);
+    const priorDateTimeStamp = new Date().setDate(today.getDate() - 7); 
     const priorDate = new Date(priorDateTimeStamp);
 
     const userPostsQuery = await firestoreInstance.collection(PRIV_USER_DATA).doc(userId).collection(AUTHOR_OF_POSTS)
